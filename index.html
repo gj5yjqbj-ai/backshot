@@ -1,246 +1,220 @@
 <!DOCTYPE html>
 <html lang="ja">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Backshot Roulette</title>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Backshot Roulette - Final</title>
 <style>
-body{
-  background:#111;
-  color:white;
-  font-family:sans-serif;
-  text-align:center;
-  margin:0;
-}
-.player{
-  border:2px solid white;
-  margin:10px;
-  padding:10px;
-}
-button{
-  margin:4px;
-  padding:8px 12px;
-  font-size:16px;
-}
-.flash-red{background:#800;}
-.flash-green{background:#064;}
-#log{min-height:40px;margin-top:10px;}
+body{font-family:sans-serif;background:#111;color:#eee;margin:0}
+#wrap{max-width:900px;margin:auto;padding:12px}
+h1{text-align:center}
+.row{display:flex;gap:8px}
+.card{flex:1;border:1px solid #444;padding:8px;border-radius:6px}
+.hp{font-size:20px}
+.items button,.actions button{margin:4px}
+#center{margin:12px 0;text-align:center;min-height:80px}
+.flash-red{animation:fr .5s}
+.flash-green{animation:fg .5s}
+@keyframes fr{from{background:#700}to{background:transparent}}
+@keyframes fg{from{background:#070}to{background:transparent}}
+#overlay{position:fixed;inset:0;background:#000c;display:none;align-items:center;justify-content:center}
+#overlay .box{background:#222;padding:16px;border-radius:8px}
+.log{max-height:120px;overflow:auto;background:#000;padding:6px}
+.small{opacity:.8;font-size:12px}
 </style>
 </head>
 <body>
+<div id="overlay"><div class="box" id="overlayBox"></div></div>
+<div id="wrap">
+<h1>Backshot Roulette</h1>
 
-<h2 id="info"></h2>
-
-<div class="player">
-<h3>A</h3>
-❤️ <span id="hpA"></span>
-<div id="itemsA"></div>
+<div class="row">
+  <div class="card" id="p0">
+    <b>Player A</b>
+    <div class="hp">HP: <span id="hp0"></span></div>
+    <div class="items" id="items0"></div>
+  </div>
+  <div class="card" id="p1">
+    <b>Player B</b>
+    <div class="hp">HP: <span id="hp1"></span></div>
+    <div class="items" id="items1"></div>
+  </div>
 </div>
 
-<div class="player">
-<h3>B</h3>
-❤️ <span id="hpB"></span>
-<div id="itemsB"></div>
+<div id="center">
+  <div id="turn"></div>
+  <div id="aim"></div>
+  <div class="actions">
+    <button onclick="shoot(0)">自分に撃つ</button>
+    <button onclick="shoot(1)">相手に撃つ</button>
+  </div>
 </div>
 
-<button onclick="shoot('self')">自分に撃つ</button>
-<button onclick="shoot('other')">相手に撃つ</button>
-
-<div id="log"></div>
+<div class="log" id="log"></div>
+<div class="small">※ 比率表示中は操作不可</div>
+</div>
 
 <script>
-/* ===== 基本設定 ===== */
-const maxHP = [0,3,5,6];
-const itemsPerRound = [0,3,4,5];
-const ITEMS = [
- "虫眼鏡","ビール","タバコ","手錠",
- "ノコギリ","使い捨て携帯","インバータ",
- "アドレナリン","期限切れ薬"
-];
+/* ===== 状態 ===== */
+const ITEMS = ["虫眼鏡","ビール","タバコ","手錠","ノコギリ","使い捨て携帯","アドレナリン","インバータ","期限切れ薬"];
+const RHP=[3,5,6], RITEM=[3,4,5];
+let round=0, win=[0,0];
+let cur=0, skip=[false,false];
+let hp=[0,0], items=[[],[]];
+let bullets=[], saw=false, invertedNext=false;
+let locked=false;
 
-let round = 1;
-let turn = Math.random()<0.5 ? "A":"B";
-
-let players = {
- A:{hp:3,items:[]},
- B:{hp:3,items:[]}
-};
-
-let bullets = [];
-let sawed = false;
-
-/* ===== アイテム抽選（確実版） ===== */
-function randomItem(){
-  if(Math.random()<0.08) return "タバコ";
-  const pool = ITEMS.filter(i=>i!=="タバコ");
-  return pool[Math.floor(Math.random()*pool.length)];
+/* ===== ユーティリティ ===== */
+const $=id=>document.getElementById(id);
+const log=t=>{$("log").innerHTML+=t+"<br>";$("log").scrollTop=1e9}
+function overlay(html,ms){ locked=true; $("overlayBox").innerHTML=html; $("overlay").style.display="flex";
+  setTimeout(()=>{$("overlay").style.display="none"; locked=false},ms);
 }
 
-/* ===== ラウンド開始 ===== */
-function startRound(){
-  ["A","B"].forEach(p=>{
-    players[p].hp = maxHP[round];
-    players[p].items = [];
-  });
-  reload();
-  updateUI();
-}
-
-/* ===== 装填 ===== */
-function reload(){
+/* ===== 弾生成 ===== */
+function loadBullets(){
+  let n=3+Math.floor(Math.random()*6);
+  let real=Math.max(1,Math.floor(n/2)+(Math.random()<.5?0:1));
+  let blank=n-real;
+  if(Math.abs(real-blank)>2){ real=Math.ceil(n/2); blank=n-real }
   bullets=[];
-  let total = Math.floor(Math.random()*6)+3;
-  let real = Math.floor(total/2);
-  let blank = total-real;
-  while(Math.abs(real-blank)>2){
-    real--; blank++;
-  }
-  bullets = [
-    ...Array(real).fill("real"),
-    ...Array(blank).fill("blank")
-  ].sort(()=>Math.random()-0.5);
+  for(let i=0;i<real;i++)bullets.push(1);
+  for(let i=0;i<blank;i++)bullets.push(0);
+  bullets.sort(()=>Math.random()-.5);
+  overlay(`再装填<br>実弾:${real} 空弾:${blank}`,5000);
+  giveItems();
+}
 
-  ["A","B"].forEach(p=>{
-    for(let i=0;i<itemsPerRound[round];i++){
-      players[p].items.push(randomItem());
+/* ===== アイテム ===== */
+function giveItems(){
+  let k=RITEM[round];
+  for(let p=0;p<2;p++){
+    for(let i=0;i<k;i++){
+      if(items[p].length<8){
+        let pool=ITEMS.slice();
+        // タバコ低確率
+        if(Math.random()<.03) items[p].push("タバコ");
+        else items[p].push(pool[Math.floor(Math.random()*pool.length)]);
+      }
     }
-  });
-
-  log(`再装填：実弾${real} 空弾${blank}`);
+  }
+  render();
+}
+function useItem(p,i){
+  if(locked) return;
+  let it=items[p][i];
+  log(`${pName(p)}が${it}を使用`);
+  items[p].splice(i,1);
+  if(it==="虫眼鏡"){
+    overlay(`次は ${peek()? "実弾":"空弾"}`,3000);
+  }
+  if(it==="ビール"){
+    let b=draw(false);
+    overlay(`${b?"実弾":"空弾"}が出ました`,3000);
+  }
+  if(it==="タバコ"){
+    hp[p]=Math.min(hp[p]+1,RHP[round]);
+  }
+  if(it==="手錠"){
+    skip[1-p]=true;
+  }
+  if(it==="ノコギリ"){ saw=true; }
+  if(it==="使い捨て携帯"){
+    if(bullets.length>1){
+      let idx=1+Math.floor(Math.random()*(bullets.length-1));
+      overlay(`${idx+1}発目は ${bullets[idx]?"実弾":"空弾"}`,3000);
+    }
+  }
+  if(it==="アドレナリン"){
+    let opp=1-p;
+    let cand=items[opp].filter(x=>x!=="アドレナリン");
+    if(cand.length){
+      let j=Math.floor(Math.random()*cand.length);
+      let got=cand[j];
+      log(`奪取:${got}`);
+      // 即使用
+      useItem(opp, items[opp].indexOf(got));
+    }
+  }
+  if(it==="インバータ"){ invertedNext=true; }
+  if(it==="期限切れ薬"){
+    if(Math.random()<.5) hp[p]=Math.min(hp[p]+2,RHP[round]);
+    else hp[p]=Math.max(0,hp[p]-1);
+    if(hp[p]===0) endRound(1-p);
+  }
+  render();
 }
 
 /* ===== 発砲 ===== */
 function shoot(target){
-  if(bullets.length===0) return;
-
-  let shooter = turn;
-  let victim = target==="self" ? shooter : (shooter==="A"?"B":"A");
-
-  log(`${shooter} → ${victim}`);
-
+  if(locked) return;
+  $("aim").innerText=`${pName(cur)} → ${pName(target?1-cur:cur)}`;
+  overlay("銃を発射中…",4000);
   setTimeout(()=>{
-    let b = bullets.shift();
-    if(b==="real"){
-      document.body.className="flash-red";
-      players[victim].hp -= sawed?2:1;
-    }else{
-      document.body.className="flash-green";
-    }
-    sawed=false;
-
-    setTimeout(()=>{
-      document.body.className="";
-      afterShot(b,shooter,victim);
-    },500);
+    let b=draw(true,target?1-cur:cur);
+    flash(b);
   },4000);
 }
-
-function afterShot(b,shooter,victim){
-  if(players[victim].hp<=0){
-    round++;
-    if(round>3){log("ゲーム終了");return;}
-    startRound();
-    return;
+function draw(apply, victim){
+  if(bullets.length===0) loadBullets();
+  let b=bullets.shift();
+  if(invertedNext){ b=b?0:1; invertedNext=false; }
+  if(apply){
+    if(b){
+      let dmg=saw?2:1; saw=false;
+      hp[victim]=Math.max(0,hp[victim]-dmg);
+      log("実弾が出ました");
+      if(hp[victim]===0) return endRound(cur), b;
+    }else{
+      log("空弾が出ました");
+      if(victim===cur){ render(); return turnKeep(); }
+    }
   }
-  if(bullets.length===0) reload();
-  if(!(b==="blank" && shooter===victim))
-    turn = shooter==="A"?"B":"A";
-  updateUI();
+  if(bullets.length===0) loadBullets();
+  nextTurn();
+  render();
+  return b;
+}
+function flash(b){
+  document.body.classList.add(b?"flash-red":"flash-green");
+  setTimeout(()=>document.body.classList.remove(b?"flash-red":"flash-green"),500);
 }
 
-/* ===== アイテム使用（確実に動く） ===== */
-function useItem(p,i){
-  if(turn!==p) return;
+/* ===== ターン ===== */
+function turnKeep(){ render(); }
+function nextTurn(){
+  cur=1-cur;
+  if(skip[cur]){ skip[cur]=false; cur=1-cur; }
+}
+function endRound(w){
+  win[w]++; log(`${pName(w)}がラウンド勝利`);
+  round++;
+  if(win[w]===2){ alert(`${pName(w)}の勝利！`); location.reload(); }
+  hp=[RHP[round],RHP[round]]; items=[[],[]]; saw=false; invertedNext=false;
+  cur=Math.random()<.5?0:1; loadBullets();
+}
 
-  let item = players[p].items[i];
-  log(p+" は "+item+" を使用");
-
-  let other = p==="A"?"B":"A";
-
-  switch(item){
-    case "虫眼鏡":
-      alert("現在の弾："+bullets[0]);
-      break;
-
-    case "ビール":
-      let out = bullets.shift();
-      alert(out==="real"?"実弾が出ました":"空弾が出ました");
-      if(bullets.length===0) reload();
-      break;
-
-    case "タバコ":
-      players[p].hp = Math.min(players[p].hp+1,maxHP[round]);
-      break;
-
-    case "手錠":
-      turn = p;
-      break;
-
-    case "ノコギリ":
-      sawed = true;
-      break;
-
-    case "使い捨て携帯":
-      if(bullets.length>1){
-        let n = Math.floor(Math.random()*(bullets.length-1))+1;
-        alert((n+1)+"発目は "+bullets[n]);
-      }
-      break;
-
-    case "インバータ":
-      bullets = bullets.map(b=>b==="real"?"blank":"real");
-      break;
-
-    case "アドレナリン":
-      if(players[other].items.length){
-        let stolen = players[other].items.shift();
-        alert("奪った："+stolen);
-      }
-      break;
-
-    case "期限切れ薬":
-      if(Math.random()<0.5)
-        players[p].hp=Math.min(players[p].hp+2,maxHP[round]);
-      else
-        players[p].hp--;
-      break;
+/* ===== 表示 ===== */
+function render(){
+  $("hp0").innerText=hp[0]; $("hp1").innerText=hp[1];
+  $("turn").innerText=`ラウンド${round+1} / 手番:${pName(cur)}`;
+  for(let p=0;p<2;p++){
+    let d=$("items"+p); d.innerHTML="";
+    items[p].forEach((it,i)=>{
+      let b=document.createElement("button");
+      b.textContent=it; b.onclick=()=>useItem(p,i);
+      d.appendChild(b);
+    });
   }
-
-  players[p].items.splice(i,1);
-  updateUI();
 }
+const pName=p=>p===0?"Player A":"Player B";
+const peek=()=>{ let b=bullets[0]; return invertedNext? !b:b }
 
-/* ===== UI ===== */
-function updateUI(){
-  info.textContent = `R${round} 手番:${turn}`;
-  hpA.textContent = players.A.hp;
-  hpB.textContent = players.B.hp;
-
-  itemsA.innerHTML="";
-  players.A.items.forEach((it,i)=>{
-    let b=document.createElement("button");
-    b.textContent=it;
-    b.disabled = (turn!=="A");
-    b.onclick=()=>useItem("A",i);
-    itemsA.appendChild(b);
-  });
-
-  itemsB.innerHTML="";
-  players.B.items.forEach((it,i)=>{
-    let b=document.createElement("button");
-    b.textContent=it;
-    b.disabled = (turn!=="B");
-    b.onclick=()=>useItem("B",i);
-    itemsB.appendChild(b);
-  });
-}
-
-function log(t){
-  document.getElementById("log").textContent=t;
-}
-
-/* ===== 起動 ===== */
-startRound();
+/* ===== 初期化 ===== */
+hp=[RHP[0],RHP[0]];
+cur=Math.random()<.5?0:1;
+loadBullets();
+render();
 </script>
 </body>
 </html>
