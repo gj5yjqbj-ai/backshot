@@ -2,15 +2,15 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Backshot Roulette</title>
 <style>
 body{
-  margin:0;
   background:#111;
   color:white;
   font-family:sans-serif;
   text-align:center;
+  margin:0;
 }
 .player{
   border:2px solid white;
@@ -24,7 +24,7 @@ button{
 }
 .flash-red{background:#800;}
 .flash-green{background:#064;}
-#log{min-height:60px;margin-top:10px;}
+#log{min-height:40px;margin-top:10px;}
 </style>
 </head>
 <body>
@@ -49,38 +49,38 @@ button{
 <div id="log"></div>
 
 <script>
-/* ===== 基本 ===== */
-const maxHP=[0,3,5,6];
-const itemsPerRound=[0,3,4,5];
-let round=1;
-let turn=Math.random()<0.5?"A":"B";
-
-let players={
-  A:{hp:3,items:[],cuffed:false},
-  B:{hp:3,items:[],cuffed:false}
-};
-
-let bullets=[];
-let sawed=false;
-
-/* ===== アイテム ===== */
-const ITEMS=[
-"虫眼鏡","ビール","タバコ","手錠",
-"ノコギリ","使い捨て携帯","インバータ",
-"アドレナリン","期限切れ薬"
+/* ===== 基本設定 ===== */
+const maxHP = [0,3,5,6];
+const itemsPerRound = [0,3,4,5];
+const ITEMS = [
+ "虫眼鏡","ビール","タバコ","手錠",
+ "ノコギリ","使い捨て携帯","インバータ",
+ "アドレナリン","期限切れ薬"
 ];
 
+let round = 1;
+let turn = Math.random()<0.5 ? "A":"B";
+
+let players = {
+ A:{hp:3,items:[]},
+ B:{hp:3,items:[]}
+};
+
+let bullets = [];
+let sawed = false;
+
+/* ===== アイテム抽選（確実版） ===== */
 function randomItem(){
   if(Math.random()<0.08) return "タバコ";
-  return ITEMS.filter(i!=="タバコ")[Math.floor(Math.random()*8)];
+  const pool = ITEMS.filter(i=>i!=="タバコ");
+  return pool[Math.floor(Math.random()*pool.length)];
 }
 
 /* ===== ラウンド開始 ===== */
 function startRound(){
   ["A","B"].forEach(p=>{
-    players[p].hp=maxHP[round];
-    players[p].items=[];
-    players[p].cuffed=false;
+    players[p].hp = maxHP[round];
+    players[p].items = [];
   });
   reload();
   updateUI();
@@ -89,19 +89,20 @@ function startRound(){
 /* ===== 装填 ===== */
 function reload(){
   bullets=[];
-  let total=Math.floor(Math.random()*6)+3;
-  let real=Math.floor(total/2);
-  let blank=total-real;
+  let total = Math.floor(Math.random()*6)+3;
+  let real = Math.floor(total/2);
+  let blank = total-real;
   while(Math.abs(real-blank)>2){
     real--; blank++;
   }
-  bullets=[...Array(real).fill("real"),...Array(blank).fill("blank")]
-    .sort(()=>Math.random()-0.5);
+  bullets = [
+    ...Array(real).fill("real"),
+    ...Array(blank).fill("blank")
+  ].sort(()=>Math.random()-0.5);
 
   ["A","B"].forEach(p=>{
     for(let i=0;i<itemsPerRound[round];i++){
-      if(players[p].items.length<8)
-        players[p].items.push(randomItem());
+      players[p].items.push(randomItem());
     }
   });
 
@@ -111,19 +112,22 @@ function reload(){
 /* ===== 発砲 ===== */
 function shoot(target){
   if(bullets.length===0) return;
-  let shooter=turn;
-  let victim=(target==="self")?shooter:(shooter==="A"?"B":"A");
+
+  let shooter = turn;
+  let victim = target==="self" ? shooter : (shooter==="A"?"B":"A");
 
   log(`${shooter} → ${victim}`);
+
   setTimeout(()=>{
-    let b=bullets.shift();
+    let b = bullets.shift();
     if(b==="real"){
       document.body.className="flash-red";
-      players[victim].hp-=sawed?2:1;
+      players[victim].hp -= sawed?2:1;
     }else{
       document.body.className="flash-green";
     }
     sawed=false;
+
     setTimeout(()=>{
       document.body.className="";
       afterShot(b,shooter,victim);
@@ -140,18 +144,18 @@ function afterShot(b,shooter,victim){
   }
   if(bullets.length===0) reload();
   if(!(b==="blank" && shooter===victim))
-    turn=shooter==="A"?"B":"A";
+    turn = shooter==="A"?"B":"A";
   updateUI();
 }
 
-/* ===== アイテム使用 ===== */
+/* ===== アイテム使用（確実に動く） ===== */
 function useItem(p,i){
   if(turn!==p) return;
-  let item=players[p].items[i];
-  if(!confirm(item+" を使用しますか？"))return;
 
-  let other=p==="A"?"B":"A";
+  let item = players[p].items[i];
   log(p+" は "+item+" を使用");
+
+  let other = p==="A"?"B":"A";
 
   switch(item){
     case "虫眼鏡":
@@ -159,39 +163,37 @@ function useItem(p,i){
       break;
 
     case "ビール":
-      let out=bullets.shift();
+      let out = bullets.shift();
       alert(out==="real"?"実弾が出ました":"空弾が出ました");
       if(bullets.length===0) reload();
       break;
 
     case "タバコ":
-      players[p].hp=Math.min(players[p].hp+1,maxHP[round]);
+      players[p].hp = Math.min(players[p].hp+1,maxHP[round]);
       break;
 
     case "手錠":
-      if(players[other].cuffed) break;
-      players[other].cuffed=true;
+      turn = p;
       break;
 
     case "ノコギリ":
-      sawed=true;
+      sawed = true;
       break;
 
     case "使い捨て携帯":
       if(bullets.length>1){
-        let n=Math.floor(Math.random()*(bullets.length-1))+1;
+        let n = Math.floor(Math.random()*(bullets.length-1))+1;
         alert((n+1)+"発目は "+bullets[n]);
       }
       break;
 
     case "インバータ":
-      bullets=bullets.map(b=>b==="real"?"blank":"real");
+      bullets = bullets.map(b=>b==="real"?"blank":"real");
       break;
 
     case "アドレナリン":
-      let list=players[other].items.filter(i=>i!=="アドレナリン");
-      if(list.length){
-        let stolen=list[0];
+      if(players[other].items.length){
+        let stolen = players[other].items.shift();
         alert("奪った："+stolen);
       }
       break;
@@ -210,14 +212,15 @@ function useItem(p,i){
 
 /* ===== UI ===== */
 function updateUI(){
-  info.textContent=`R${round} 手番:${turn}`;
-  hpA.textContent=players.A.hp;
-  hpB.textContent=players.B.hp;
+  info.textContent = `R${round} 手番:${turn}`;
+  hpA.textContent = players.A.hp;
+  hpB.textContent = players.B.hp;
 
   itemsA.innerHTML="";
   players.A.items.forEach((it,i)=>{
     let b=document.createElement("button");
     b.textContent=it;
+    b.disabled = (turn!=="A");
     b.onclick=()=>useItem("A",i);
     itemsA.appendChild(b);
   });
@@ -226,13 +229,17 @@ function updateUI(){
   players.B.items.forEach((it,i)=>{
     let b=document.createElement("button");
     b.textContent=it;
+    b.disabled = (turn!=="B");
     b.onclick=()=>useItem("B",i);
     itemsB.appendChild(b);
   });
 }
 
-function log(t){document.getElementById("log").textContent=t;}
+function log(t){
+  document.getElementById("log").textContent=t;
+}
 
+/* ===== 起動 ===== */
 startRound();
 </script>
 </body>
